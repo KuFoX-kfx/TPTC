@@ -1,17 +1,51 @@
 import asyncio
 import requests
+import datetime
 from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.utils import executor
 
-# Замените на ваши данные
-API_TOKEN = ''
-AUTH_TOKEN = ''
+
+
+
+### API Tokens
+## Replace the value with your own
+# TG Bot API | Replace the value with your own
+TG_API_TOKEN = """API_KEY"""
+# TimePad API | Replace the value with your own
+TIMEPAD_API_TOKEN = """API_KEY"""
+
+### TG values
+## Replace the value with your own
+# Your TG ID
+USER_ID = 0 
+
+### Timepad values
+## Replace the value with your own
+# Event ID | # Replace the value with your own
 EVENT_ID = 0
-USER_ID = ''  # Укажите здесь ID пользователя
-CHECK_INTERVAL = 61  # Интервал проверки в секундах
-# Инициализация бота и диспетчера
-bot = Bot(token=API_TOKEN)
+# Change value in connection with your event
+TICKET_TOTAL = 0
+
+## Don`t change if it is not required
+# Is registration open
+IS_REGISTRATION_OPEN = False
+# Ticket limit for sale?
+TICKET_LIMIT = 0
+# Status of event?
+STATUS = "ok"
+# The number of tickets for which notifications are not received
+TICKET_REMAINIG = 0
+
+### Programm values
+## Don`t change if it is not required
+# Check interval (seconds) | Don`t set value less 60
+CHECK_INTERVAL = 61  
+
+
+
+
+bot = Bot(token=TG_API_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 
@@ -36,58 +70,86 @@ def get_event_data(event_id, auth_token):
             info = {
             'id': ticket.get('id'),
             'name': ticket.get('name'),
-            'remaining': ticket.get('remaining', 0),  # Если 'remaining' нет, устанавливаем 0
+            'remaining': ticket.get('remaining', None),  # If there is no 'remaining', set None
             'status': ticket.get('status')
             }
             tickets_info.append(info)
             
         return {
+            "Status" : True,
+            "Status_code" : response.status_code,
+            "Status_reason" : response.reason,
+            "Data" : {
             "is_registration_open": is_registration_open,
             "tickets_total": tickets_total,
             "ticket_limit": ticket_limit,
             "status": status,
             "tickets": tickets_info
+            }
+            }
+        
+    elif response.status_code != 200:
+        return {
+            "Status" : False,
+            "Status_code" : response.status_code,
+            "Status_reason" : response.reason,
+            "Data" : response.json()
         }
         
-        
     else:
-        return None
+        return {
+            "Status" : None,
+        }
+        
 
 async def check_event():
     
     while True:
         
-        event_data = get_event_data(EVENT_ID, AUTH_TOKEN)
+        event_data = get_event_data(EVENT_ID, TIMEPAD_API_TOKEN)
 
-        if event_data:
-            # Проверка на изменение
-            if (event_data["is_registration_open"] != False): await bot.send_message(USER_ID, f"is_registration_open = {event_data['is_registration_open']}")
-            elif event_data["tickets_total"] != 1041: await bot.send_message(USER_ID, f"tickets_total = {event_data['tickets_total']}\n")
-            elif event_data["ticket_limit"] != 0: await bot.send_message(USER_ID, f"ticket_limit = {event_data['ticket_limit']}\n")
-            elif event_data["status"] != "ok": await bot.send_message(USER_ID, f"status = {event_data['status']}")
-            else: print("Билета нету |0|")
+        if event_data['Status'] == True:
+            message = ("")
+            msg = ("")
+            # Check change
+            if event_data['Data']['is_registration_open'] != IS_REGISTRATION_OPEN: msg += (f"Is Registration Open = {event_data['Data']['is_registration_open']}\n")
+            else: print("No ticket |1|")
+            if event_data['Data']["tickets_total"] != TICKET_TOTAL: msg += (f"Tickets Total = {event_data['Data']['tickets_total']}\n")
+            else: print("No ticket |2|")
+            if event_data['Data']["ticket_limit"] != TICKET_LIMIT: msg += (f"Ticket Limit = {event_data['Data']['ticket_limit']}\n")
+            else: print("No ticket |3|")
+            if event_data['Data']["status"] != STATUS: msg += (f"Status = {event_data['Data']['status']}\n")
+            else: print("No ticket |4|")
             
-            i = 1            
-            for ticket in event_data['tickets']: 
-                if ticket['remaining'] != 0: await bot.send_message(USER_ID, f"ticket-id = {ticket['id']}\nticket-name = {ticket['name']}\nticket-remaining = {ticket['remaining']}")
-                elif ticket['status'] not in ("crowd", "closed"): await bot.send_message(USER_ID, f"ticket-id = {ticket['id']}\nticket-name = {ticket['name']}\nticket-status = {ticket['status']}")
-                else: print(f"Билета нету |{i}|")   
+            if msg != "":
+                message = (f"```TPTC_Event-{EVENT_ID}\n{msg}```")
+                
+            
+            i = 5
+            for ticket in event_data['Data']['tickets']: 
+                if ticket['status'] != "closed" and ticket['status'] != "late":
+                    if ticket['status'] != "crowd" and (ticket['remaining'] != 0 or ticket['remaining'] != None):
+                        message += (f"```TPTC_Ticket-{ticket['id']}\nID = {ticket['id']}\nName = {ticket['name']}\nRemaining = {ticket['remaining']}\nStatus = {ticket['status']}```")
+                print(f"No ticket |{i}|")   
                 i += 1
                 
-        else:
-            await bot.send_message(USER_ID, "ОШИБКА ПРИ ПОЛУЧЕНИИ ДАННЫХ")
-            print("Ошибка при получении данных")
+            # Send message to TG about find someone
+            if message != "":
+                await bot.send_message(USER_ID, message, parse_mode="MARKDOWN")
+        elif event_data['Status'] == False:
+            # Send message when data error
+            await bot.send_message(USER_ID, f"*ERROR RECEIVING DATA*\n\nCODE: `{event_data['Status_code']}`\nREASON: `{event_data['Status_reason']}`\nANSWER:\n```TPTC_(TimePad-Tickets-Checker)_By-KuFoX\n{event_data['Data']}```", parse_mode="MARKDOWN")
+
 
         await asyncio.sleep(CHECK_INTERVAL)
 
 @dp.message_handler(commands=['start'])
 async def send_welcome(message: types.Message):
-    await message.reply("Бот запущен и будет проверять события каждую минуту.")
+    await message.reply("Bot work")
 
 async def on_startup(dp):
     asyncio.create_task(check_event())
 
 if __name__ == '__main__':
-    # Запускаем бота и задачу проверки событий
     executor.start_polling(dp, on_startup=on_startup, skip_updates=True)
     
